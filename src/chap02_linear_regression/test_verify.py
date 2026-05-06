@@ -56,7 +56,7 @@ def test_identity_basis():
     phi = identity_basis(x)
     assert phi.shape == (5, 1), f"Expected (5, 1), got {phi.shape}"
     assert np.allclose(phi.squeeze(), x), "输出值不匹配"
-    print("✓ 通过")
+    print("[OK]")
 
 
 def test_multinomial_basis():
@@ -67,7 +67,7 @@ def test_multinomial_basis():
     expected = np.array([[2.0, 4.0, 8.0]])
     assert phi.shape == (1, 3), f"Expected (1, 3), got {phi.shape}"
     assert np.allclose(phi, expected), "输出值不匹配"
-    print("✓ 通过")
+    print("[OK]")
 
 
 def test_gaussian_basis():
@@ -77,7 +77,7 @@ def test_gaussian_basis():
     phi = gaussian_basis(x, feature_num=10)
     assert phi.shape == (5, 10), f"Expected (5, 10), got {phi.shape}"
     assert np.all(phi >= 0) and np.all(phi <= 1), "高斯函数值应在 [0, 1] 范围内"
-    print("✓ 通过")
+    print("[OK]")
 
 
 def test_least_squares():
@@ -90,7 +90,7 @@ def test_least_squares():
     expected_w = np.array([3, 2])
     assert w.shape == (2,), f"Expected (2,), got {w.shape}"
     assert np.allclose(w, expected_w, atol=1e-5), f"Expected {expected_w}, got {w}"
-    print("✓ 通过")
+    print("[OK]")
 
 
 def test_gradient_descent():
@@ -103,7 +103,7 @@ def test_gradient_descent():
     assert w.shape == (2,), f"Expected (2,), got {w.shape}"
     # 检查收敛性（允许较大容差）
     assert np.abs(w[0] - 3) < 1.0 and np.abs(w[1] - 2) < 1.0, "梯度下降未收敛"
-    print("✓ 通过")
+    print("[OK]")
 
 
 def test_main_function():
@@ -111,11 +111,11 @@ def test_main_function():
     print("测试: main function...", end=" ")
     x_train = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
     y_train = 2 * x_train + 3
-    f, w_lsq, w_gd = main(x_train, y_train)
+    f, w_lsq, w_gd, history = main(x_train, y_train)
     assert callable(f), "返回值应该是可调用的函数"
     assert w_lsq is not None, "应返回最小二乘权重"
     assert w_gd is None, "未使用梯度下降时应返回 None"
-    print("✓ 通过")
+    print("[OK]")
 
 
 def test_main_with_basis():
@@ -123,9 +123,9 @@ def test_main_with_basis():
     print("测试: main with multinomial_basis...", end=" ")
     x_train = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
     y_train = 2 * x_train + 3
-    f, w_lsq, w_gd = main(x_train, y_train, basis_func=multinomial_basis)
+    f, w_lsq, w_gd, history = main(x_train, y_train, basis_func=multinomial_basis)
     assert w_lsq.shape[0] == 11, "多项式基函数应生成 11 个权重（1个偏置 + 10个特征）"
-    print("✓ 通过")
+    print("[OK]")
 
 
 def test_main_prediction():
@@ -133,12 +133,12 @@ def test_main_prediction():
     print("测试: main prediction...", end=" ")
     x_train = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
     y_train = 2 * x_train + 3
-    f, w_lsq, w_gd = main(x_train, y_train)
+    f, w_lsq, w_gd, history = main(x_train, y_train)
     x_test = np.array([1.5, 2.5, 3.5])
     y_pred = f(x_test)
     assert y_pred.shape == x_test.shape, "预测输出形状应与输入相同"
     assert np.all(np.isfinite(y_pred)), "预测值应为有限数"
-    print("✓ 通过")
+    print("[OK]")
 
 
 def test_evaluate():
@@ -149,7 +149,7 @@ def test_evaluate():
     error = evaluate(ys_true, ys_pred)
     assert isinstance(error, (float, np.floating)), "错误应为浮点数"
     assert error > 0, "错误应为正数"
-    print("✓ 通过")
+    print("[OK]")
 
 
 def test_evaluate_perfect():
@@ -159,7 +159,7 @@ def test_evaluate_perfect():
     ys_pred = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
     error = evaluate(ys_true, ys_pred)
     assert error < 1e-10, "完美预测的错误应接近 0"
-    print("✓ 通过")
+    print("[OK]")
 
 
 def test_load_data():
@@ -171,14 +171,37 @@ def test_load_data():
         assert isinstance(xs, np.ndarray), "特征应为 numpy 数组"
         assert isinstance(ys, np.ndarray), "标签应为 numpy 数组"
         assert xs.shape[0] == ys.shape[0], "特征和标签数量应相同"
-        print("✓ 通过")
+        print("[OK]")
     else:
         print("⊘ 跳过 (data file not found)")
 
 
+def test_gradient_descent_with_history():
+    """测试梯度下降的历史记录功能"""
+    print("测试: gradient_descent with history...", end=" ")
+    x = np.array([1.0, 2.0, 3.0])
+    y = np.array([2.0, 4.0, 6.0])
+    phi = np.column_stack([np.ones_like(x), x])
+    w, history = gradient_descent(phi, y, lr=0.01, epochs=10, return_history=True)
+    assert len(history) == 10, f"Expected 10 history points, got {len(history)}"
+    assert history[0] > history[-1], "Loss should decrease"
+    print("[OK]")
+
+
+def test_main_with_reg_lambda():
+    """测试带正则化的训练"""
+    print("测试: main with regularization...", end=" ")
+    x_train = np.array([1.0, 2.0, 3.0])
+    y_train = np.array([2.0, 4.0, 6.0])
+    f, w_lsq, w_gd, history = main(x_train, y_train, reg_lambda=0.1)
+    assert w_lsq is not None
+    assert history is None  # 因为没有开启梯度下降
+    print("[OK]")
+
+
 if __name__ == "__main__":
     print("=" * 60)
-    print("线性回归模块单元测试")
+    print("Linear Regression Module Unit Tests")
     print("=" * 60)
     
     tests = [
@@ -187,8 +210,10 @@ if __name__ == "__main__":
         test_gaussian_basis,
         test_least_squares,
         test_gradient_descent,
+        test_gradient_descent_with_history,
         test_main_function,
         test_main_with_basis,
+        test_main_with_reg_lambda,
         test_main_prediction,
         test_evaluate,
         test_evaluate_perfect,
@@ -198,16 +223,16 @@ if __name__ == "__main__":
     passed = 0
     failed = 0
     
-    for test_func in tests:
+    for test in tests:
         try:
-            test_func()
+            test()
             passed += 1
         except Exception as e:
-            print(f"✗ 失败: {e}")
+            print(f"[FAIL]: {e}")
             failed += 1
-    
+            
     print("=" * 60)
-    print(f"测试结果: {passed} 通过, {failed} 失败")
+    print(f"Test Results: {passed} passed, {failed} failed")
     print("=" * 60)
     
     sys.exit(0 if failed == 0 else 1)
