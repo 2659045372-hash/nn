@@ -23,87 +23,75 @@ class word_embedding(nn.Module):
     def __init__(self, vocab_length, embedding_dim):
         super().__init__()
         self.word_embedding = nn.Embedding(vocab_length, embedding_dim)
-        # PyTorch默认使用均匀分布初始化，范围为[-sqrt(1/dim), sqrt(1/dim)]
-        # 如果需要特定范围，可以使用：
-        # nn.init.uniform_(self.word_embedding.weight, -1.0, 1.0)
 
     def forward(self, input_sentence):
         """
-        :param input_sentence: 一个包含词索引的张量
-        :return: 一个包含对应词向量的张量
+        :param input_sentence: 词索引张量 [batch_size, seq_len] 或 [seq_len]
+        :return: 嵌入向量张量 [batch_size, seq_len, embedding_dim]
         """
         return self.word_embedding(input_sentence)
 
 
-# 定义RNN模型
+# 定义基于 LSTM 的 RNN 模型
 class RNN_model(nn.Module):
-    def __init__(self, batch_sz, vocab_len, word_embedding, embedding_dim, lstm_hidden_dim):
+    def __init__(self, vocab_len, embedding_dim, lstm_hidden_dim, num_layers=2):
         super(RNN_model, self).__init__()
 
-        # 模型组件初始化
-        self.word_embedding_lookup = word_embedding  # 使用外部定义的词嵌入模块
-        self.batch_size = batch_sz  # 批处理大小
-        self.vocab_length = vocab_len  #词汇表大小
-        self.word_embedding_dim = embedding_dim  #词向量维度
-        self.lstm_dim = lstm_hidden_dim  # LSTM隐藏状态维度
+        # 模型参数
+        self.vocab_length = vocab_len
+        self.word_embedding_dim = embedding_dim
+        self.lstm_dim = lstm_hidden_dim
+        self.num_layers = num_layers
 
-        # 定义LSTM层
-        # input_size=embedding_dim：输入的特征维度，即词嵌入维度
-        # hidden_size=lstm_hidden_dim：LSTM隐藏状态的维度
-        # num_layers=2：堆叠两层LSTM
-        # batch_first=False：输入张量的维度顺序为(seq_len, batch, input_size)
-        self.rnn_lstm = nn.LSTM(input_size=embedding_dim, hidden_size=lstm_hidden_dim, num_layers=2, batch_first=False)
+        # 1. 词嵌入层：将词索引转换为高维稠密向量
+        self.embeddings = nn.Embedding(vocab_len, embedding_dim)
 
-        # 定义全连接层，将LSTM的输出映射到词汇表大小
-        # 使用Linear+LogSoftmax替代CrossEntropyLoss要求的LogSoftmax
+        # 2. LSTM 层：处理序列特征
+        # batch_first=True：输入输出维度为 (batch, seq, feature)
+        # dropout=0.2：在层间引入正则化，防止过拟合
+        self.lstm = nn.LSTM(
+            input_size=embedding_dim,
+            hidden_size=lstm_hidden_dim,
+            num_layers=num_layers,
+            batch_first=True,
+            dropout=0.2 if num_layers > 1 else 0
+        )
+
+        # 3. 输出层：将 LSTM 隐藏状态映射回词汇表大小
         self.fc = nn.Linear(lstm_hidden_dim, vocab_len)
 
-        # 调用权重初始化函数（需要你自定义weights_init函数）
+        # 初始化权重
         self.apply(weights_init)
 
-        # 定义log softmax激活函数作为输出层
-        self.softmax = nn.LogSoftmax(dim=1)  # 明确指定维度，避免警告
-
-    def forward(self, sentence, is_test=False):
+    def forward(self, x, hidden=None):
         """
-        前向传播函数
+        前向传播
         Args:
-            sentence: 输入句子的单词索引序列 (形状: [序列长度])
-            is_test: 是否为测试模式 (默认False)
+            x: 输入序列索引 [batch_size, seq_len]
+            hidden: 初始隐藏状态 (h, c)，若为 None 则自动初始化为 0
         Returns:
-            output: 模型输出 (测试模式返回最后一个时间步结果，训练模式返回完整序列输出)
+            output: 每个位置的预测分布 [batch_size, seq_len, vocab_len]
+            hidden: 更新后的隐藏状态
         """
-        # 查找词向量并调整形状为 (1, 序列长度, 嵌入维度)
-        batch_input = self.word_embedding_lookup(sentence).view(1, -1, self.word_embedding_dim)
+        batch_size = x.size(0)
 
-        # 初始化LSTM的初始隐藏状态和记忆细胞为0
-        h0 = torch.zeros(2, batch_input.size(1), self.lstm_dim)  # (层数, 批大小, 隐藏维度)
-        c0 = torch.zeros(2, batch_input.size(1), self.lstm_dim)
+        # 词嵌入查找
+        embeds = self.embeddings(x)  # [batch, seq, embed_dim]
 
-        # 如果有GPU可用，将张量移动到GPU
-        if torch.cuda.is_available():
-            h0 = h0.cuda()
-            c0 = c0.cuda()
-            batch_input = batch_input.cuda()
+        # LSTM 运算
+        # output 形状: [batch, seq, hidden_dim]
+        output, hidden = self.lstm(embeds, hidden)
 
-        # 前向传播：将输入送入LSTM
-        output, (hn, cn) = self.rnn_lstm(batch_input, (h0, c0))
-
-        # 将LSTM输出转换为二维张量以输入全连接层
+        # 展平以便输入全连接层
+        # out 形状: [batch * seq, hidden_dim]
         out = output.contiguous().view(-1, self.lstm_dim)
 
-        # 通过全连接层和ReLU激活
-        out = F.relu(self.fc(out))
+        # 映射到词汇表空间
+        # logits 形状: [batch * seq, vocab_len]
+        logits = self.fc(out)
 
-        # 使用log softmax获得输出分布
-        out = self.softmax(out)
+        # 恢复维度：[batch, seq, vocab_len]
+        logits = logits.view(batch_size, -1, self.vocab_length)
 
-        # 如果是测试模式，仅返回最后一个时间步的预测结果
-        if is_test:
-            prediction = out[-1, :].view(1, -1)  # 提取最后一个时间步的输出作为预测值
-            output = prediction                  # 将预测值赋值给输出变量
-        else:
-            output = out
-
-        return output
+        return logits, hidden
 

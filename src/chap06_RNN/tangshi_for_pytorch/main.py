@@ -1,6 +1,7 @@
 import numpy as np # 导入NumPy库并简称为np
 import collections
 import torch
+import os
 from torch.autograd import Variable
 import torch.optim as optim
 
@@ -136,61 +137,32 @@ def process_poems2(file_name):
     return poems_vector, word_int_map, words
 
 def generate_batch(batch_size, poems_vec, word_to_int):
-    n_chunk = len(poems_vec) // batch_size# 计算可生成的完整批次数量
-    x_batches = []# 存储输入序列批次
-    y_batches = []# 存储目标序列批次
-    for i in range(n_chunk):# 按批次处理数据
-        start_index = i * batch_size# 计算当前批次在数据中的起始和结束索引
-        end_index = start_index + batch_size
-        x_data = poems_vec[start_index:end_index]# 提取当前批次的输入数据
-        y_data = []
-        for row in x_data:# 为每个输入序列生成对应的目标序列,目标序列是输入序列右移一位，最后一个元素复制到末尾
-            y  = row[1:]# 移除第一个元素
-            y.append(row[-1])# 将原序列的最后一个元素添加到末尾
-
     """
     生成训练所需的批次数据（x_batches 和 y_batches）
 
     参数:
-    - batch_size: 每个批次的样本数（即每次喂给模型多少首诗）
-    - poems_vec: 所有诗歌的索引表示（列表形式，里面是每首诗的词索引序列）
-    - word_to_int: 词到索引的映射字典（未在本函数中使用，但一般可用于逆映射）
+    - batch_size: 每个批次的样本数
+    - poems_vec: 所有诗歌的索引表示
+    - word_to_int: 词到索引的映射字典
 
     返回:
-    - x_batches: 输入数据批次，每个元素是一个形状为 (batch_size, seq_len) 的输入序列列表
-    - y_batches: 目标数据批次，每个元素是对应输入的下一个词序列（即标签）
+    - x_batches: 输入数据批次，形状为 (n_batches, batch_size, seq_len)
+    - y_batches: 目标数据批次，形状为 (n_batches, batch_size, seq_len)
     """
-
-    n_chunk = len(poems_vec) // batch_size  # 计算可以划分成多少完整的 batch（整除部分）
-
-    x_batches = []  # 用于存储所有输入批次
-    y_batches = []  # 用于存储所有目标批次
+    n_chunk = len(poems_vec) // batch_size
+    x_batches = []
+    y_batches = []
 
     for i in range(n_chunk):
         start_index = i * batch_size
         end_index = start_index + batch_size
 
-        # 从诗歌向量集中取出一个 batch 的诗句（每首诗是一个词索引列表）
         x_data = poems_vec[start_index:end_index]
-
         y_data = []
         for row in x_data:
-            # 构造目标序列 y：将原序列向后偏移一位，并补上最后一个词（常用于语言模型预测下一个词）
-            y = row[1:]          # 将序列右移一位
-            y.append(row[-1])    # 最后一个词复制一份填充，确保长度一致
+            y = row[1:]
+            y.append(row[-1])
             y_data.append(y)
-
-        """
-        示例：
-        x_data             y_data
-        [6,2,4,6,9]       [2,4,6,9,9]  # 下一个词的预测目标
-        [1,4,2,8,5]       [4,2,8,5,5]
-        """
-        # print(x_data[0])
-        # print(y_data[0])
-        # exit(0)
-        x_batches.append(x_data)# 将处理好的批次添加到批次列表中
-
 
         x_batches.append(x_data)
         y_batches.append(y_data)
@@ -198,132 +170,132 @@ def generate_batch(batch_size, poems_vec, word_to_int):
     return x_batches, y_batches
 
 
-
 def run_training():
     # 处理数据集
-    # poems_vector, word_to_int, vocabularies = process_poems2('./tangshi.txt')
     poems_vector, word_to_int, vocabularies = process_poems1('./poems.txt')
-    # 生成batch
-    print("finish  loadding data")
-    BATCH_SIZE = 100# 每批次处理的样本数量
+    print("finish loadding data, vocab size:", len(word_to_int))
+    
+    BATCH_SIZE = 64
+    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    torch.manual_seed(5)# 设置随机种子以确保结果可复现
-    word_embedding = rnn_lstm.word_embedding( vocab_length= len(word_to_int) + 1 , embedding_dim= 100)# 模型初始化阶段：创建词嵌入层和RNN模型,创建词嵌入层，为每个词生成100维的向量表示
-    rnn_model = rnn_lstm.RNN_model(batch_sz = BATCH_SIZE,vocab_len = len(word_to_int) + 1 ,word_embedding = word_embedding ,embedding_dim= 100, lstm_hidden_dim=128)# 创建RNN模型，使用LSTM作为核心结
+    torch.manual_seed(5)
+    
+    # 初始化模型
+    # vocab_len 设为 len(word_to_int) + 1 以包含填充符
+    model = rnn.RNN_model(
+        vocab_len=len(word_to_int) + 1, 
+        embedding_dim=128, 
+        lstm_hidden_dim=256,
+        num_layers=2
+    ).to(DEVICE)
 
-    # optimizer = optim.Adam(rnn_model.parameters(), lr= 0.001)# 配置优化器和损失函数
-    optimizer=optim.RMSprop(rnn_model.parameters(), lr=0.01)
-
-    loss_fun = torch.nn.NLLLoss()
-    # rnn_model.load_state_dict(torch.load('./poem_generator_rnn'))  # if you have already trained your model you can load it by this line.
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    loss_fun = torch.nn.CrossEntropyLoss()
 
     for epoch in range(30):
-        # 生成批次数据
         batches_inputs, batches_outputs = generate_batch(BATCH_SIZE, poems_vector, word_to_int)
         n_chunk = len(batches_inputs)
-        # 遍历每个批次
+        
+        epoch_loss = 0
         for batch in range(n_chunk):
-            batch_x = batches_inputs[batch]
-            batch_y = batches_outputs[batch] # (batch , time_step)
+            # 将批次数据转换为 Tensor
+            batch_x = torch.LongTensor(batches_inputs[batch]).to(DEVICE)
+            batch_y = torch.LongTensor(batches_outputs[batch]).to(DEVICE)
 
-            loss = 0# 初始化批次损失
-            for index in range(BATCH_SIZE): # 处理批次中的每个样本
-                x = np.array(batch_x[index], dtype = np.int64)# 样本输入序列
-                y = np.array(batch_y[index], dtype = np.int64)# 样本目标序列
-                x = Variable(torch.from_numpy(np.expand_dims(x,axis=1)))# 转换为PyTorch张量并调整维度
-                y = Variable(torch.from_numpy(y ))
-                pre = rnn_model(x)
-                loss += loss_fun(pre , y)
-                if index == 0:# 每批次的第一个样本打印预测结果用于调试
-                    _, pre = torch.max(pre, dim=1)
-                    print('prediction', pre.data.tolist()) # the following  three line can print the output and the prediction
-                    print('b_y       ', y.data.tolist())   # And you need to take a screenshot and then past is to your homework paper.
-                    print('*' * 30)
-            loss  = loss  / BATCH_SIZE# 计算平均损失
-            print("epoch  ",epoch,'batch number',batch,"loss is: ", loss.data.tolist())
-            optimizer.zero_grad()# 梯度清零
-            loss.backward()# 反向传播计算梯度
-            torch.nn.utils.clip_grad_norm(rnn_model.parameters(), 1) # 梯度裁剪防止梯度爆炸
-            optimizer.step()# 更新模型参数
+            # 前向传播
+            logits, _ = model(batch_x)
+            
+            # 计算损失：CrossEntropyLoss 期望输入为 (N, C, ...)
+            # 展平以便计算
+            loss = loss_fun(logits.view(-1, model.vocab_length), batch_y.view(-1))
+            
+            # 反向传播
+            optimizer.zero_grad()
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 5) # 梯度裁剪
+            optimizer.step()
 
-            if batch % 20 ==0:# 每20个批次保存一次模型
-                torch.save(rnn_model.state_dict(), './poem_generator_rnn')
-                print("finish  save model")
+            epoch_loss += loss.item()
+            
+            if batch % 50 == 0:
+                print(f"Epoch {epoch} | Batch {batch}/{n_chunk} | Loss: {loss.item():.4f}")
 
-
-
-def to_word(predict, vocabs):  # 预测的结果转化成汉字
-    sample = np.argmax(predict)
-
-    if sample >= len(vocabs):
-        sample = len(vocabs) - 1
-
-    return vocabs[sample]
+        print(f"Epoch {epoch} Average Loss: {epoch_loss / n_chunk:.4f}")
+        
+        # 每轮保存一次模型
+        torch.save(model.state_dict(), './poem_generator_rnn.pth')
 
 
-def pretty_print_poem(poem):  # 格式化打印古诗，令打印的结果更工整
-    shige = []  # 存储有效诗句的列表
-
-    for w in poem:
-        if w == start_token or w == end_token:  # 遇到开始或结束标记则停止
-            break
-        shige.append(w)  # 将非开始/结束标记的字符加入诗句列表
-
-    poem_sentences = poem.split('。')  # 按句号分割成多个句子
-
-    for s in poem_sentences:
-        if s != '' and len(s) > 10:  # 排除空句，并筛选长度大于10的句子
-            print(s + '。')  # 打印完整的一句诗，并补上句号
-
-# 生成古诗的主函数
-def gen_poem(begin_word):
+def gen_poem(begin_word, temperature=1.0):
     """
-    基于LSTM模型生成古诗
+    基于 LSTM 模型生成古诗
     
     参数:
-        begin_word: 诗歌起始字（必须是训练词汇表中的字）
-        
-    返回:
-        str: 生成的诗歌字符串
+        begin_word: 诗歌起始字
+        temperature: 温度参数，越高生成的诗越随机，越低越保守
     """
-    # poems_vector, word_int_map, vocabularies = process_poems2('./tangshi.txt')  #  use the other dataset to train the network
     poems_vector, word_int_map, vocabularies = process_poems1('./poems.txt')
+    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-   # 创建词嵌入层 
-    word_embedding = rnn_lstm.word_embedding(vocab_length=len(word_int_map) + 1, embedding_dim=100)
-    rnn_model = rnn_lstm.RNN_model(batch_sz=64, vocab_len=len(word_int_map) + 1, word_embedding=word_embedding,
-                                   embedding_dim=100, lstm_hidden_dim=128)
+    # 初始化并加载模型
+    model = rnn.RNN_model(
+        vocab_len=len(word_int_map) + 1, 
+        embedding_dim=128, 
+        lstm_hidden_dim=256,
+        num_layers=2
+    ).to(DEVICE)
 
-    rnn_model.load_state_dict(torch.load('./poem_generator_rnn'))
+    if os.path.exists('./poem_generator_rnn.pth'):
+        model.load_state_dict(torch.load('./poem_generator_rnn.pth', map_location=DEVICE))
+    model.eval()
 
-    # 指定开始的字
+    # 将字转换为索引
+    word_idx = word_int_map.get(begin_word)
+    if word_idx is None:
+        print(f"字 '{begin_word}' 不在词汇表中，随机选择一个。")
+        word_idx = np.random.randint(0, len(word_int_map))
 
-    poem = begin_word
-    word = begin_word
-    while word != end_token:# 将当前诗歌内容转换为整数索引序列
-        input = np.array([word_int_map[w] for w in poem],dtype= np.int64)
-        input = Variable(torch.from_numpy(input))
-        output = rnn_model(input, is_test=True)
-        word = to_word(output.data.tolist()[-1], vocabularies)
-        poem += word
-        # print(word)
-        # print(poem)
-        if len(poem) > 30:
-            break
-    return poem
+    poem = [begin_word]
+    input_idx = torch.LongTensor([[word_idx]]).to(DEVICE)
+    hidden = None
+
+    with torch.no_grad():
+        for i in range(100): # 最多生成 100 个字
+            logits, hidden = model(input_idx, hidden)
+            
+            # 使用温度采样
+            probs = torch.softmax(logits[0, -1] / temperature, dim=0).cpu().numpy()
+            word_idx = np.random.choice(len(probs), p=probs)
+            
+            word = vocabularies[word_idx]
+            if word == end_token:
+                break
+            
+            poem.append(word)
+            input_idx = torch.LongTensor([[word_idx]]).to(DEVICE)
+
+    return "".join(poem)
 
 
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser(description='唐诗生成器')
+    parser.add_argument('--mode', type=str, default='gen', choices=['train', 'gen'], help='运行模式: train (训练) 或 gen (生成)')
+    parser.add_argument('--start', type=str, default='日', help='生成的起始字')
+    parser.add_argument('--temp', type=float, default=1.0, help='采样温度')
+    args = parser.parse_args()
 
-run_training()  # 如果不是训练阶段 ，请注销这一行 。 网络训练时间很长。
-
-
-pretty_print_poem(gen_poem("日"))
-pretty_print_poem(gen_poem("红"))
-pretty_print_poem(gen_poem("山"))
-pretty_print_poem(gen_poem("夜"))
-pretty_print_poem(gen_poem("湖"))
-pretty_print_poem(gen_poem("湖"))
-pretty_print_poem(gen_poem("湖"))
-pretty_print_poem(gen_poem("君"))
+    if args.mode == 'train':
+        run_training()
+    else:
+        # 预设几个起始字进行演示
+        seeds = ['日', '红', '山', '夜', '湖', '君']
+        print("="*30)
+        print("正在生成古诗示例...")
+        print("="*30)
+        for seed in seeds:
+            poem = gen_poem(seed, temperature=args.temp)
+            pretty_print_poem(poem)
+            print("-" * 20)
 
 
