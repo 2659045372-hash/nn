@@ -104,23 +104,23 @@ class RL_QG_agent:
         """存储经验"""
         self.memory.append((s, a, r, s_, done))
 
-    def learn(self):
+    def learn(self) -> None:
         """从经验回放池中学习"""
         if len(self.memory) < self.batch_size:
             return
 
         # 随机采样一个批次
         batch = random.sample(self.memory, self.batch_size)
-        batch_s = np.array([x[0] for x in batch])
-        batch_a = np.array([x[1] for x in batch])
-        batch_r = np.array([x[2] for x in batch])
-        batch_s_ = np.array([x[3] for x in batch])
-        batch_done = np.array([x[4] for x in batch])
+        states = np.array([x[0] for x in batch])
+        actions = np.array([x[1] for x in batch])
+        rewards = np.array([x[2] for x in batch])
+        next_states = np.array([x[3] for x in batch])
+        dones = np.array([x[4] for x in batch])
 
         # 计算当前 Q 值
-        q_eval = self.sess.run(self.Q_values, feed_dict={self.input_states: batch_s})
+        q_eval = self.sess.run(self.Q_values, feed_dict={self.input_states: states})
         # 计算下一状态的 Q 值
-        q_next = self.sess.run(self.Q_values, feed_dict={self.input_states: batch_s_})
+        q_next = self.sess.run(self.Q_values, feed_dict={self.input_states: next_states})
 
         # 更新目标 Q 值
         q_target = q_eval.copy()
@@ -129,13 +129,13 @@ class RL_QG_agent:
         # Q-Learning 更新公式: Q(s,a) = r + gamma * max(Q(s',a'))
         # 如果游戏结束，则 Q(s,a) = r
         max_q_next = np.max(q_next, axis=1)
-        q_target[batch_index, batch_a] = batch_r + self.gamma * max_q_next * (1 - batch_done)
+        q_target[batch_index, actions] = rewards + self.gamma * max_q_next * (1 - dones)
 
         # 执行优化
         _, cost = self.sess.run(
             [self.train_op, self.loss],
             feed_dict={
-                self.input_states: batch_s,
+                self.input_states: states,
                 self.target_Q: q_target
             }
         )
