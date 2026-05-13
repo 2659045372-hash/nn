@@ -4,6 +4,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import random
 
+from typing import Tuple, List, Dict, Optional, Set
+
 # 自定义网格环境
 class DroneGridEnv(gym.Env):
     """
@@ -15,7 +17,7 @@ class DroneGridEnv(gym.Env):
     """
     metadata = {'render.modes': ['human']}
 
-    def __init__(self, grid_size=10):
+    def __init__(self, grid_size: int = 10):
         super(DroneGridEnv, self).__init__()
         self.grid_size = grid_size  # 网格大小
         # 定义动作空间：上下左右4个动作
@@ -27,10 +29,10 @@ class DroneGridEnv(gym.Env):
         ))
 
         # 初始化起点、终点、障碍物
-        self.start = (0, 0)
-        self.end = (grid_size - 1, grid_size - 1)
+        self.start: Tuple[int, int] = (0, 0)
+        self.end: Tuple[int, int] = (grid_size - 1, grid_size - 1)
         # 随机生成障碍物（数量为网格的10%）
-        self.obstacles = set()
+        self.obstacles: Set[Tuple[int, int]] = set()
         obstacle_num = int(grid_size * grid_size * 0.1)
         while len(self.obstacles) < obstacle_num:
             x = random.randint(0, grid_size - 1)
@@ -40,7 +42,7 @@ class DroneGridEnv(gym.Env):
                 self.obstacles.add((x, y))
 
         # 无人机当前位置
-        self.current_pos = None
+        self.current_pos: Optional[Tuple[int, int]] = None
         # 初始化绘图对象（避免重复创建）
         self.fig, self.ax = plt.subplots(figsize=(10, 10))
         # 初始化颜色条（只创建一次）
@@ -48,7 +50,7 @@ class DroneGridEnv(gym.Env):
         # 定义颜色映射（更美观的配色）
         self.cmap = plt.cm.Spectral_r  # 替换为更协调的配色
         # 定义标签对应的数值（用于颜色映射）
-        self.label_values = {
+        self.label_values: Dict[str, int] = {
             '空位置': 0,
             '起点': 1,
             '终点': 2,
@@ -57,14 +59,28 @@ class DroneGridEnv(gym.Env):
         }
         self.value_labels = {v: k for k, v in self.label_values.items()}
 
-    def reset(self, seed=None, options=None):
-        """重置环境，返回初始状态（适配gymnasium的reset接口）"""
+    def reset(self, seed: Optional[int] = None, options: Optional[dict] = None) -> Tuple[Tuple[int, int], dict]:
+        """
+        重置环境，返回初始状态
+
+        :param seed: 随机种子
+        :param options: 其他选项
+        :return: (初始位置, 额外信息)
+        """
         super().reset(seed=seed)
         self.current_pos = self.start
-        return self.current_pos, {}  # gymnasium要求返回(state, info)
+        return self.current_pos, {}
 
-    def step(self, action):
-        """执行动作，返回新状态、奖励、是否结束、是否截断、额外信息（适配gymnasium）"""
+    def step(self, action: int) -> Tuple[Tuple[int, int], float, bool, bool, dict]:
+        """
+        执行动作，返回新状态、奖励、是否结束、是否截断、额外信息
+
+        :param action: 动作编号 (0:上, 1:下, 2:左, 3:右)
+        :return: (新位置, 奖励, 是否结束, 是否截断, 额外信息)
+        """
+        if self.current_pos is None:
+            raise ValueError("Environment must be reset before calling step()")
+            
         x, y = self.current_pos
         # 根据动作更新位置
         if action == 0:  # 上
@@ -210,7 +226,7 @@ class DroneGridEnv(gym.Env):
 
 # Q-Learning智能体
 class QLearningAgent:
-    def __init__(self, state_space, action_space, learning_rate=0.1, gamma=0.9, epsilon=0.1):
+    def __init__(self, state_space: spaces.Space, action_space: spaces.Discrete, learning_rate: float = 0.1, gamma: float = 0.9, epsilon: float = 0.1):
         """
         初始化Q-Learning智能体
         :param state_space: 状态空间
@@ -226,26 +242,26 @@ class QLearningAgent:
         self.n_actions = action_space.n
 
         # 初始化Q表：字典，键为状态(x, y)，值为动作对应的Q值（列表）
-        self.q_table = {}
+        self.q_table: Dict[Tuple[int, int], List[float]] = {}
 
-    def get_q_value(self, state):
+    def get_q_value(self, state: Tuple[int, int]) -> List[float]:
         """获取状态对应的Q值，若不存在则初始化"""
         if state not in self.q_table:
             self.q_table[state] = [0.0 for _ in range(self.n_actions)]
         return self.q_table[state]
 
-    def choose_action(self, state):
+    def choose_action(self, state: Tuple[int, int]) -> int:
         """ε-贪心策略选择动作"""
         if random.uniform(0, 1) < self.epsilon:
             # 探索：随机选择动作
-            action = self.action_space.sample()
+            action = int(self.action_space.sample())
         else:
             # 利用：选择Q值最大的动作
             q_values = self.get_q_value(state)
-            action = np.argmax(q_values)
+            action = int(np.argmax(q_values))
         return action
 
-    def learn(self, state, action, reward, next_state, done):
+    def learn(self, state: Tuple[int, int], action: int, reward: float, next_state: Tuple[int, int], done: bool):
         """更新Q表"""
         current_q = self.get_q_value(state)[action]
         if done:
@@ -255,7 +271,7 @@ class QLearningAgent:
             target_q = reward + self.gamma * np.max(next_q_values)  # Q-Learning的目标Q值
 
         # 更新Q值
-        self.get_q_value(state)[action] += self.lr * (target_q - current_q)
+        self.q_table[state][action] += self.lr * (target_q - current_q)
 
 # 主程序：训练并测试
 if __name__ == "__main__":
