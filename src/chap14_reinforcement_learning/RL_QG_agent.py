@@ -8,10 +8,25 @@ from collections import deque
 tf.compat.v1.disable_eager_execution()
 
 class RL_QG_agent:
-    """黑白棋强化学习智能体，基于Q学习和卷积神经网络"""
+    """
+    黑白棋（Reversi）强化学习智能体。
     
-    def __init__(self, learning_rate=0.001, reward_decay=0.9, e_greedy=0.9, replace_target_iter=200, memory_size=2000, batch_size=32):
-        """初始化智能体参数和模型路径"""
+    该智能体基于 Q-Learning 算法，并使用卷积神经网络（CNN）作为函数逼近器来估计 Q 值。
+    支持经验回放（Experience Replay）和 Epsilon-Greedy 探索策略。
+    """
+    
+    def __init__(self, learning_rate: float = 0.001, reward_decay: float = 0.9, e_greedy: float = 0.9, replace_target_iter: int = 200, memory_size: int = 2000, batch_size: int = 32):
+        """
+        初始化智能体。
+
+        Args:
+            learning_rate: 学习率。
+            reward_decay: 奖励折扣因子 (gamma)。
+            e_greedy: 最大探索率。
+            replace_target_iter: 更新目标网络的步数（当前未显式使用双网络结构，预留）。
+            memory_size: 经验回放池的大小。
+            batch_size: 训练时的批次大小。
+        """
         self.model_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Reversi")
         os.makedirs(self.model_dir, exist_ok=True)
         
