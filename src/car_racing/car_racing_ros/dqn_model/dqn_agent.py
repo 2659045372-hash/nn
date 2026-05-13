@@ -34,19 +34,30 @@ from base_agent import BaseAgent, BaseDQNNetwork, SkipFrame, plot_rewards
 
 class DQNAgent(BaseAgent):
     """
-    标准 DQN 智能体
+    标准 DQN (Deep Q-Network) 智能体实现。
+    
+    该智能体实现了经典 DQN 算法的核心组件，包括：
+    - 策略网络 (Policy Network): 用于选择动作并计算当前 Q 值。
+    - 目标网络 (Target Network): 周期性同步自策略网络，用于提供稳定的 Q 值目标。
+    - 经验回放 (Experience Replay): 通过采样历史经验打破样本间的时间相关性。
     
     特点:
-    - 使用固定的目标网络更新（每5000步同步一次）
-    - 周期性同步策略网络到目标网络
+    - 使用固定的目标网络更新（默认每 5000 步同步一次）。
+    - 支持 Dueling DQN 架构（通过配置开启）。
+    - 支持 Double DQN 逻辑（通过配置开启）。
     
-    与 DoubleDQN 的区别:
-    - DQN: 使用目标网络选择和评估动作
-    - DoubleDQN: 使用策略网络选择，目标网络评估（减少Q值过估计）
+    与 Double DQN 的主要区别:
+    - DQN: 使用目标网络同时进行动作选择和价值评估。
+    - Double DQN: 使用策略网络选择动作，使用目标网络进行价值评估，从而减少 Q 值的过估计。
     """
     
     def _build_networks(self):
-        """构建策略网络和目标网络"""
+        """
+        初始化并构建神经网络。
+        
+        根据 hyperparameters 中的 'dueling' 配置选择是否使用 Dueling 架构。
+        初始化策略网络和目标网络，并将它们移动到指定的计算设备（CPU/GPU）。
+        """
         dueling = bool(self.hyperparameters.get('dueling', True))
         self.policy_net = BaseDQNNetwork(self.state_shape, self.action_n, dueling=dueling).float()
         self.frozen_net = BaseDQNNetwork(self.state_shape, self.action_n, dueling=dueling).float()
@@ -56,17 +67,20 @@ class DQNAgent(BaseAgent):
     
     def update_net(self, batch_size):
         """
-        DQN 核心更新逻辑
+        执行 DQN 的一次梯度更新步骤。
         
-        算法步骤:
-        1. 从回放缓冲区采样一批经验
-        2. 计算当前Q值 (使用策略网络)
-        3. 计算目标Q值 (使用目标网络)
-        4. 最小化两者之间的差距
-        
-        目标Q值计算:
-        - 如果 episode 结束: target = r
-        - 如果未结束: target = r + γ * max(Q_target(s', a'))
+        参数:
+            batch_size (int): 每次更新从经验回放池中采样的样本数量。
+            
+        返回:
+            tuple: (平均 Q 值, 损失值)
+            
+        算法流程:
+        1. 从回放缓冲区采样一批 (s, a, r, s', done) 经验。
+        2. 计算当前状态 s 下动作 a 的估计 Q 值 (使用策略网络)。
+        3. 根据是否使用 Double DQN 计算目标 Q 值 (使用目标网络评估)。
+        4. 计算 MSE 损失并执行反向传播。
+        5. 检查是否达到同步目标网络的步数阈值。
         """
         self.n_updates += 1
         states, actions, rewards, new_states, terminateds = self.get_samples(batch_size)
