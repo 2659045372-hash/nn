@@ -167,7 +167,7 @@ class RL_QG_agent:
             
         return action
 
-    def save_model(self):
+    def save_model(self) -> None:
         """保存模型参数"""
         try:
             model_path = os.path.join(self.model_dir, 'parameter.ckpt')
@@ -176,7 +176,7 @@ class RL_QG_agent:
         except Exception as e:
             print("保存模型时出错:", e)
 
-    def load_model(self):
+    def load_model(self) -> None:
         """加载模型参数"""
         if self.sess is None:
             self.init_model()  # 未初始化则先构建模型
