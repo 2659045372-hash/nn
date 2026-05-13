@@ -60,6 +60,18 @@ class DQNAgent(Agent):
         """选择动作 (epsilon-greedy)"""
         if state is None:
             state = self.get_state()
+            
+        # 输入验证
+        if not isinstance(state, (np.ndarray, list)):
+            raise ValueError(f"Expected state to be numpy array or list, got {type(state)}")
+        
+        expected_shape = (self.config.STATE_DIM,)
+        if np.array(state).shape != expected_shape:
+            # 尝试处理常见的维度问题，如多了一个 batch 维度
+            state_np = np.array(state).squeeze()
+            if state_np.shape != expected_shape:
+                raise ValueError(f"Expected state shape {expected_shape}, got {state_np.shape}")
+            state = state_np
 
         if not eval_mode and np.random.random() < self.epsilon:
             return np.random.randint(self.config.ACTION_DIM)
@@ -106,6 +118,9 @@ class DQNAgent(Agent):
 
     def train(self, episodes=None, save_path='./models'):
         """训练 DQN"""
+        if episodes is not None and (not isinstance(episodes, int) or episodes <= 0):
+            raise ValueError("episodes must be a positive integer")
+            
         episodes = episodes or self.config.MAX_EPISODES
         os.makedirs(save_path, exist_ok=True)
 
