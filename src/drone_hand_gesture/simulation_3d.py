@@ -41,6 +41,7 @@ class Drone3DViewer:
         self.show_grid = True
         self.show_trajectory = True
         self.show_axes = True
+        self.show_waypoints = True
 
         # 相机参数
         self.camera_distance = 15.0
@@ -61,8 +62,14 @@ class Drone3DViewer:
                   0, 0, 0,  # 观察点
                   0, 1, 0)  # 上方向
 
-    def render(self, drone_state=None, trajectory=None):
-        """渲染整个场景"""
+    def render(self, drone_state=None, trajectory=None, waypoints=None):
+        """渲染整个场景
+        
+        Args:
+            drone_state: 无人机状态
+            trajectory: 轨迹数据
+            waypoints: 航点列表
+        """
         # 清除缓冲区
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
         glClearColor(0.1, 0.1, 0.15, 1.0)  # 深蓝色背景
@@ -93,6 +100,10 @@ class Drone3DViewer:
         # 绘制轨迹（如果有）
         if self.show_trajectory and trajectory:
             self._draw_trajectory(trajectory)
+
+        # 绘制航点（如果有）
+        if self.show_waypoints and waypoints:
+            self._draw_waypoints(waypoints)
 
         # 绘制状态信息
         if drone_state:
@@ -148,9 +159,9 @@ class Drone3DViewer:
 
         glPushMatrix()
         glTranslatef(x, y, z)
-        glRotatef(np.degrees(yaw), 0, 1, 0)
-        glRotatef(np.degrees(pitch), 1, 0, 0)
-        glRotatef(np.degrees(roll), 0, 0, 1)
+        glRotatef(yaw, 0, 1, 0)
+        glRotatef(pitch, 1, 0, 0)
+        glRotatef(roll, 0, 0, 1)
 
         # 根据状态设置颜色
         armed = state.get('armed', True)
@@ -191,112 +202,97 @@ class Drone3DViewer:
         glEnd()
         glLineWidth(1.0)
 
+    def _draw_waypoints(self, waypoints):
+        """绘制航点标记"""
+        if not waypoints:
+            return
+
+        # 航点颜色配置
+        waypoint_colors = {
+            '起飞': (0.0, 1.0, 0.0),      # 绿色
+            '左转': (1.0, 0.5, 0.0),      # 橙色
+            '右转': (1.0, 0.5, 0.0),      # 橙色
+            '上升': (0.0, 0.5, 1.0),      # 蓝色
+            '下降': (0.5, 0.5, 1.0),      # 浅蓝色
+            '悬停': (1.0, 1.0, 0.0),      # 黄色
+            '降落': (1.0, 0.0, 0.0),      # 红色
+        }
+
+        for i, waypoint in enumerate(waypoints):
+            # 获取航点位置
+            if hasattr(waypoint, 'position'):
+                pos = waypoint.position
+                label = waypoint.label
+                index = waypoint.index
+            else:
+                pos = waypoint.get('position', [0, 0, 0])
+                label = waypoint.get('label', f'WP{i}')
+                index = waypoint.get('index', i)
+
+            x, y, z = pos[0], pos[1], pos[2]
+
+            # 获取颜色
+            color = waypoint_colors.get(label, (1.0, 1.0, 0.0))  # 默认黄色
+
+            # 绘制航点标记（带圆环的立柱）
+            glColor3f(*color)
+
+            # 绘制立柱
+            glLineWidth(2.0)
+            glBegin(GL_LINES)
+            glVertex3f(x, 0, z)
+            glVertex3f(x, y, z)
+            glEnd()
+            glLineWidth(1.0)
+
+            # 绘制地面圆圈
+            glColor3f(color[0] * 0.7, color[1] * 0.7, color[2] * 0.7)
+            glBegin(GL_LINE_LOOP)
+            for j in range(32):
+                angle = 2 * np.pi * j / 32
+                circle_x = x + 0.3 * np.cos(angle)
+                circle_z = z + 0.3 * np.sin(angle)
+                glVertex3f(circle_x, 0.01, circle_z)
+            glEnd()
+
+            # 绘制顶部标记
+            glColor3f(*color)
+            self._draw_waypoint_marker(x, y, z)
+
+    def _draw_waypoint_marker(self, x, y, z):
+        """绘制航点标记（菱形）"""
+        marker_size = 0.2
+
+        glBegin(GL_TRIANGLES)
+        # 四个三角形组成的菱形
+        # 顶部
+        glVertex3f(x, y + marker_size, z)
+        glVertex3f(x - marker_size * 0.5, y, z - marker_size * 0.5)
+        glVertex3f(x + marker_size * 0.5, y, z + marker_size * 0.5)
+
+        glVertex3f(x, y + marker_size, z)
+        glVertex3f(x + marker_size * 0.5, y, z - marker_size * 0.5)
+        glVertex3f(x - marker_size * 0.5, y, z + marker_size * 0.5)
+
+        # 底部
+        glVertex3f(x, y - marker_size * 0.5, z)
+        glVertex3f(x - marker_size * 0.5, y, z - marker_size * 0.5)
+        glVertex3f(x + marker_size * 0.5, y, z + marker_size * 0.5)
+
+        glVertex3f(x, y - marker_size * 0.5, z)
+        glVertex3f(x + marker_size * 0.5, y, z - marker_size * 0.5)
+        glVertex3f(x - marker_size * 0.5, y, z + marker_size * 0.5)
+        glEnd()
+
     def _draw_status_overlay(self, state):
         """绘制状态信息覆盖层"""
-        # 切换到2D模式
-        glMatrixMode(GL_PROJECTION)
-        glPushMatrix()
-        glLoadIdentity()
-        gluOrtho2D(0, self.width, 0, self.height)
-
-        glMatrixMode(GL_MODELVIEW)
-        glPushMatrix()
-        glLoadIdentity()
-
-        # 禁用深度测试和光照
-        glDisable(GL_DEPTH_TEST)
-        glDisable(GL_LIGHTING)
-
-        # 绘制状态文本
-        font = pygame.font.SysFont(None, 24)
-
-        status_info = [
-            f"模式: {state.get('mode', 'TEST')}",
-            f"位置: X={state.get('position', [0, 0, 0])[0]:.2f}m, Y={state.get('position', [0, 0, 0])[1]:.2f}m, Z={state.get('position', [0, 0, 0])[2]:.2f}m",
-            f"电池: {state.get('battery', 100):.1f}%",
-            f"解锁: {'是' if state.get('armed', True) else '否'}",
-            f"俯仰: {np.degrees(state.get('orientation', [0, 0, 0])[1]):.1f}°, 横滚: {np.degrees(state.get('orientation', [0, 0, 0])[0]):.1f}°, 偏航: {np.degrees(state.get('orientation', [0, 0, 0])[2]):.1f}°"
-        ]
-
-        for i, text in enumerate(status_info):
-            text_surface = font.render(text, True, (255, 255, 255))
-            text_data = pygame.image.tostring(text_surface, "RGBA", True)
-
-            glRasterPos2d(10, self.height - 30 - i * 25)
-            glDrawPixels(text_surface.get_width(), text_surface.get_height(),
-                         GL_RGBA, GL_UNSIGNED_BYTE, text_data)
-
-        # 绘制控制提示
-        controls = [
-            "控制提示:",
-            "ESC - 退出仿真",
-            "G - 切换网格显示",
-            "T - 切换轨迹显示",
-            "A - 切换坐标轴显示",
-            "↑↓←→ - 旋转视角",
-            "+/- - 缩放视角",
-            "空格 - 重置视角"
-        ]
-
-        for i, text in enumerate(controls):
-            text_surface = font.render(text, True, (200, 200, 255))
-            text_data = pygame.image.tostring(text_surface, "RGBA", True)
-
-            glRasterPos2d(self.width - 300, self.height - 30 - i * 25)
-            glDrawPixels(text_surface.get_width(), text_surface.get_height(),
-                         GL_RGBA, GL_UNSIGNED_BYTE, text_data)
-
-        # 恢复设置
-        glEnable(GL_DEPTH_TEST)
-        glEnable(GL_LIGHTING)
-
-        glMatrixMode(GL_PROJECTION)
-        glPopMatrix()
-        glMatrixMode(GL_MODELVIEW)
-        glPopMatrix()
+        # 暂时禁用文本绘制，只保留3D场景渲染
+        pass
 
     def _draw_default_overlay(self):
         """绘制默认覆盖层（无状态数据时）"""
-        # 切换到2D模式
-        glMatrixMode(GL_PROJECTION)
-        glPushMatrix()
-        glLoadIdentity()
-        gluOrtho2D(0, self.width, 0, self.height)
-
-        glMatrixMode(GL_MODELVIEW)
-        glPushMatrix()
-        glLoadIdentity()
-
-        # 禁用深度测试和光照
-        glDisable(GL_DEPTH_TEST)
-        glDisable(GL_LIGHTING)
-
-        # 绘制状态文本
-        font = pygame.font.SysFont(None, 24)
-
-        status_info = [
-            "3D无人机仿真系统",
-            "测试模式运行中",
-            "等待连接主程序...",
-            "按ESC键退出"
-        ]
-
-        for i, text in enumerate(status_info):
-            text_surface = font.render(text, True, (255, 255, 255))
-            text_data = pygame.image.tostring(text_surface, "RGBA", True)
-
-            glRasterPos2d(10, self.height - 30 - i * 25)
-            glDrawPixels(text_surface.get_width(), text_surface.get_height(),
-                         GL_RGBA, GL_UNSIGNED_BYTE, text_data)
-
-        # 恢复设置
-        glEnable(GL_DEPTH_TEST)
-        glEnable(GL_LIGHTING)
-
-        glMatrixMode(GL_PROJECTION)
-        glPopMatrix()
-        glMatrixMode(GL_MODELVIEW)
-        glPopMatrix()
+        # 暂时禁用文本绘制，只保留3D场景渲染
+        pass
 
     def handle_events(self):
         """处理窗口事件"""
@@ -333,6 +329,9 @@ class Drone3DViewer:
                     self.camera_distance = max(5, self.camera_distance - 1)
                 elif event.key == pygame.K_MINUS:
                     self.camera_distance = min(50, self.camera_distance + 1)
+                elif event.key == pygame.K_w:
+                    self.show_waypoints = not self.show_waypoints
+                    print(f"航点显示: {'开' if self.show_waypoints else '关'}")
         return True
 
 

@@ -1,24 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
-import numpy as np # 导入NumPy库。NumPy（Numerical Python）是 Python 中最基础、最强大的科学计算库之一
-
-# 条件导入 matplotlib，增强兼容性
-try:
-    import matplotlib
-    matplotlib.use('Agg') # 强制使用 Agg 后端，避免环境中的循环引用异常
-    import matplotlib.pyplot as plt
-except Exception:
-    # 当 matplotlib 不可用时，创建模拟对象以支持测试
-    class DummyPlt:
-        def figure(self, *args, **kwargs): return self
-        def plot(self, *args, **kwargs): pass
-        def show(self, *args, **kwargs): pass
-        def xlabel(self, *args, **kwargs): pass
-        def ylabel(self, *args, **kwargs): pass
-        def title(self, *args, **kwargs): pass
-        def legend(self, *args, **kwargs): pass
-        def grid(self, *args, **kwargs): pass
-    plt = DummyPlt()
+import numpy as np
+import matplotlib.pyplot as plt
 
 # 用于创建各种静态、交互式和动画可视化图表
 
@@ -168,75 +151,72 @@ def least_squares(phi, y, alpha=0.0, solver="pinv"):
     return w
 
 
-def gradient_descent(phi, y, lr=0.01, epochs=1000, reg_lambda=0.0, return_history=False):
+def gradient_descent(phi, y, lr=0.01, epochs=1000):
     """实现批量梯度下降算法优化线性回归权重
     参数:
         phi: 设计矩阵（特征矩阵），形状为 (n_samples, n_features)
         y: 目标值向量，形状为 (n_samples,)
         lr: 学习率（步长），控制参数更新幅度，默认0.01
         epochs: 训练轮数，默认1000
-        reg_lambda: L2 正则化系数，默认0.0 (无正则化)
-        return_history: 是否返回损失历史，用于可视化过程
     返回:
         w: 优化后的权重向量，形状为 (n_features,)
-        history (可选): 损失值列表
+    数学原理:
+        最小化损失函数 J(w) = 1/m * ||φw - y||²
+        梯度计算: ∇J(w) = 2/m * φ.T @ (φw - y)
+        参数更新: w := w - α * ∇J(w)
     """
+    # 初始化权重向量（全零开始）
+    # 形状与特征数量相同，即每个特征对应一个权重
     w = np.zeros(phi.shape[1])
-    history = []
     
+    # 迭代优化循环
     for epoch in range(epochs):
+        # 1. 前向传播：计算当前权重下的预测值
+        # 矩阵乘法 φw，结果形状 (n_samples,)
         y_pred = phi @ w
+        
+        # 2. 计算误差：预测值与真实值的差
+        # 形状 (n_samples,)
         error = y - y_pred
         
-        # 计算梯度（包含 L2 正则化梯度项）
-        # 损失函数 J(w) = 1/m * ||φw - y||² + λ * ||w||²
-        # 梯度 ∇J(w) = 2/m * φ.T @ (φw - y) + 2 * λ * w
-        gradient = (-2 * phi.T @ error / len(y)) + (2 * reg_lambda * w)
+        # 3. 计算梯度（损失函数对权重的导数）
+        # 梯度公式推导：
+        #   J(w) = 1/m * ∑(φw - y)²
+        #   ∇J(w) = 2/m * φ.T @ (φw - y)
+        # 其中：
+        # φ.T @ error 计算每个特征上的误差总和
+        # -2/len(y) 是损失函数导数的系数
+        # 最终形状 (n_features,)
+        gradient = -2 * phi.T @ error / len(y)
         
+        # 4. 参数更新：沿负梯度方向调整权重
+        # 学习率控制更新步长
+        # 公式: w_new = w_old - lr * ∇J(w)
         w -= lr * gradient
-        
-        if return_history:
-            loss = np.mean(error**2) + reg_lambda * np.sum(w**2)
-            history.append(loss)
-            
-    if return_history:
-        return w, history
+    
     return w
 
 
-def plot_loss_history(history):
-    """绘制训练过程中的损失下降曲线"""
-    plt.figure(figsize=(8, 5))
-    plt.plot(history)
-    plt.xlabel("Epochs")
-    plt.ylabel("MSE + Regularization Loss")
-    plt.title("Gradient Descent Training History")
-    plt.grid(True, alpha=0.3)
-    plt.show()
-
-
-def main(x_train, y_train, use_gradient_descent=False, basis_func=None, reg_lambda=0.0, lr=0.01, epochs=1000):
+def main(x_train, y_train, use_gradient_descent=False, basis_func=None):
     """训练模型，并返回从x到y的映射。
-    basis_func: 可选，基函数，默认恒等基
-    reg_lambda: 正则化参数
+    basis_func: 可选，基函数（如identity_basis, multinomial_basis, gaussian_basis），默认恒等基
     """
+    # 支持自定义基函数
     if basis_func is None:
         basis_func = identity_basis
 
+    # 生成偏置项和特征矩阵
     phi0 = np.expand_dims(np.ones_like(x_train), axis=1)
+    # 构造偏置项1
     phi1 = basis_func(x_train)
-    phi = np.concatenate([phi0, phi1], axis=1)
-    
-    # 最小二乘法求解（支持正则化）
-    w_lsq = least_squares(phi, y_train, alpha=reg_lambda)
+    phi = np.concatenate([phi0, phi1], axis=1) # 将偏置项和特征矩阵拼接成完整的特征矩阵
+    # 最小二乘法求解权重
+    w_lsq = least_squares(phi, y_train)
 
     w_gd = None
-    gd_history = None
     if use_gradient_descent:
-        # 使用增强后的梯度下降
-        res = gradient_descent(phi, y_train, lr=lr, epochs=epochs, reg_lambda=reg_lambda, return_history=True)
-        w_gd, gd_history = res
-        print(f"梯度下降完成，最终损失: {gd_history[-1]:.6f}")
+# 直接调用已实现的gradient_descent函数
+        w_gd = gradient_descent(phi, y_train, lr=0.01, epochs=1000)
 
     def f(x):
         phi0 = np.expand_dims(np.ones_like(x), axis=1)
@@ -246,33 +226,7 @@ def main(x_train, y_train, use_gradient_descent=False, basis_func=None, reg_lamb
             return np.dot(phi, w_gd)
         else:
             return np.dot(phi, w_lsq)
-            
-    return f, w_lsq, w_gd, gd_history
-
-
-def compare_bases(x_train, y_train, x_test, y_test):
-    """对比不同基函数的表现"""
-    bases = [
-        (identity_basis, "Identity"),
-        (lambda x: multinomial_basis(x, feature_num=5), "Multinomial(deg=5)"),
-        (lambda x: gaussian_basis(x, feature_num=5), "Gaussian(num=5)")
-    ]
-    
-    plt.figure(figsize=(10, 6))
-    plt.plot(x_train, y_train, "ro", markersize=3, label="Train Data")
-    plt.plot(x_test, y_test, "k--", alpha=0.5, label="Ground Truth")
-    
-    for basis_func, name in bases:
-        f, _, _, _ = main(x_train, y_train, basis_func=basis_func)
-        y_pred = f(x_test)
-        rmse = evaluate(y_test, y_pred)
-        plt.plot(x_test, y_pred, label=f"{name} (RMSE: {rmse:.2f})")
-        
-    plt.xlabel("x")
-    plt.ylabel("y")
-    plt.title("Comparison of Different Basis Functions")
-    plt.legend()
-    plt.show()
+    return f, w_lsq, w_gd# 返回预测函数、最小二乘权重和梯度下降权重
 
 
 def evaluate(ys, ys_pred):
@@ -314,64 +268,13 @@ if __name__ == "__main__":
     # w_lsq: 通过最小二乘法得到的权重向量
     # w_gd: 通过梯度下降法得到的权重向量
     f, w_lsq, w_gd = main(x_train, y_train)
-    y_pred = f(x_test)
-    mse = np.mean((y_test - y_pred) ** 2)
-    print(f"均方误差(MSE): {mse:.4f}")
-    print("\n最小二乘法权重:")
-    print(w_lsq)
-    print("\n梯度下降法权重:")
-    print(w_gd)
-    
 
-def evaluate(ys, ys_pred):
-    """评估模型。"""
-    # 计算预测值与真实值的标准差
-    std = np.sqrt(np.mean(np.abs(ys - ys_pred) ** 2))
-    return std
-
-
-def plot_results(x_train, y_train, x_test, y_test, y_test_pred):
-    """绘制训练集、测试集和预测结果"""
-    plt.plot(x_train, y_train, "ro", markersize=3)
-    plt.plot(x_test, y_test, "k")
-    plt.plot(x_test, y_test_pred, "k")
-    plt.xlabel("x")
-    plt.ylabel("y")
-    plt.title("Linear Regression")
-    plt.legend(["train", "test", "pred"])
-    plt.show()
-
-
-# 程序主入口（建议不要改动以下函数的接口）
-if __name__ == "__main__":
-    # 定义训练和测试数据文件路径
-    train_file = "train.txt"  # 训练集文件
-    test_file = "test.txt"  # 测试集文件
-    # 载入数据
-    x_train, y_train = load_data(
-        train_file
-    )  # 从文件加载训练数据，返回特征矩阵x_train和标签向量y_train
-    x_test, y_test = load_data(
-        test_file
-    )  # 从文件加载测试数据，返回特征矩阵x_test和标签向量y_test
-    print(x_train.shape)  # x_train.shape 返回训练集特征矩阵的维度信息
-    print(x_test.shape)  # x_test.shape 返回测试集特征矩阵的维度信息
-
-    # 使用线性回归训练模型，返回一个函数 f() 使得 y = f(x)
-    # f: 预测函数 y = f(x)
-    # w_lsq: 通过最小二乘法得到的权重向量
-    # w_gd: 通过梯度下降法得到的权重向量
-    f, w_lsq, w_gd = main(x_train, y_train)
-
-    y_train_pred = f(x_train)  # 对训练数据应用预测函数
-    std = evaluate(y_train, y_train_pred)  # 计算预测值与真实值的标准差作为评估指标
+    y_train_pred = f(x_train)
+    std = evaluate(y_train, y_train_pred)
     print("训练集预测值与真实值的标准差：{:.1f}".format(std))
 
-    # 计算预测的输出值
     y_test_pred = f(x_test)
-    # 使用测试集评估模型
     std = evaluate(y_test, y_test_pred)
     print("预测值与真实值的标准差：{:.1f}".format(std))
 
-    # 使用封装的绘图函数
     plot_results(x_train, y_train, x_test, y_test, y_test_pred)
