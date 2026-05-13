@@ -146,7 +146,7 @@ class RL_QG_agent:
         
         self.learn_step_counter += 1
 
-    def place(self, state, enables):
+    def place(self, state: np.ndarray, enables: list) -> int:
         """根据当前状态和合法动作选择最优落子位置 (Epsilon-Greedy)"""
         # 状态预处理
         state_input = np.array(state).reshape(1, 8, 8, 3).astype(np.float32)
