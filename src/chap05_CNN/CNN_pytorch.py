@@ -16,6 +16,9 @@ import numpy as np
 # 导入 PyTorch 主库
 import torch
 
+# 导入进度条库
+from tqdm import tqdm
+
 # 导入神经网络模块（构建模型的基础类和各类网络层）
 import torch.nn as nn
 
@@ -29,14 +32,19 @@ import torch.utils.data as Data
 import torchvision
 
 # =============================================================================
-# 超参数设置
+# 超参数与路径设置
 # =============================================================================
-LEARNING_RATE  = 1e-3   # 初始学习率：增大初始值配合调度器
-KEEP_PROB_RATE = 0.5    # 增强 Dropout 强度
-MAX_EPOCH      = 5      # 训练轮数：建议 5 轮以获得较高的准确率
-BATCH_SIZE     = 64     # 优化批大小
+LEARNING_RATE  = 1e-3   # 初始学习率
+KEEP_PROB_RATE = 0.5    # Dropout 强度
+MAX_EPOCH      = 5      # 训练轮数
+BATCH_SIZE     = 64     # 批大小
 
-# 自动选择计算设备：优先使用 NVIDIA GPU (CUDA)，否则使用 CPU
+# 路径设置：确保在不同目录下运行都能正确找到数据
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(BASE_DIR, 'mnist')
+MODEL_SAVE_PATH = os.path.join(BASE_DIR, 'best_cnn_model.pth')
+
+# 自动选择计算设备
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # =============================================================================
@@ -57,12 +65,12 @@ test_transform = torchvision.transforms.Compose([
 
 # 检查本地是否已存在 MNIST 数据集
 DOWNLOAD_MNIST = False
-if not os.path.exists('./mnist/') or not os.listdir('./mnist/'):
+if not os.path.exists(DATA_DIR) or not os.listdir(DATA_DIR):
     DOWNLOAD_MNIST = True
 
 # 加载训练数据集
 train_data = torchvision.datasets.MNIST(
-    root='./mnist/',
+    root=DATA_DIR,
     train=True,
     transform=train_transform,
     download=DOWNLOAD_MNIST
@@ -71,12 +79,13 @@ train_data = torchvision.datasets.MNIST(
 train_loader = Data.DataLoader(
     dataset=train_data,
     batch_size=BATCH_SIZE,
-    shuffle=True
+    shuffle=True,
+    num_workers=2 if os.name != 'nt' else 0 # Windows 下 num_workers > 0 可能会有问题
 )
 
 # 加载测试数据集
 test_data = torchvision.datasets.MNIST(
-    root='./mnist/',
+    root=DATA_DIR,
     train=False,
     transform=test_transform
 )
@@ -157,11 +166,11 @@ def evaluate(model, loader):
 def train(model):
     # 优化器与学习率调度器
     optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-5)
-    # 学习率每 2 轮减小为原来的 0.5 倍，帮助模型在后期更精细地寻找局部最优
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=2, gamma=0.5)
     loss_func = nn.CrossEntropyLoss()
 
     history = {'loss': [], 'acc': []}
+    best_acc = 0.0
 
     print(f"训练设备: {DEVICE}")
     print("=" * 60)
@@ -170,7 +179,10 @@ def train(model):
         model.train()
         running_loss = 0.0
         
-        for step, (images, labels) in enumerate(train_loader):
+        # 使用 tqdm 包装训练加载器
+        pbar = tqdm(enumerate(train_loader), total=len(train_loader), desc=f"Epoch [{epoch+1}/{MAX_EPOCH}]")
+        
+        for step, (images, labels) in pbar:
             images, labels = images.to(DEVICE), labels.to(DEVICE)
             
             outputs = model(images)
@@ -182,39 +194,55 @@ def train(model):
             
             running_loss += loss.item()
             
-            if step % 100 == 99:
-                acc = evaluate(model, test_loader)
-                print(f"Epoch [{epoch+1}/{MAX_EPOCH}] | Step [{step+1}/{len(train_loader)}] | "
-                      f"Loss: {loss.item():.4f} | Test Acc: {acc*100:.2f}%")
+            # 更新进度条信息
+            if step % 10 == 0:
+                pbar.set_postfix({'loss': f'{loss.item():.4f}'})
         
         # 每个 epoch 结束更新学习率
         scheduler.step()
         
-        # 记录历史
+        # 记录历史并评估
         epoch_acc = evaluate(model, test_loader)
-        history['loss'].append(running_loss / len(train_loader))
+        avg_loss = running_loss / len(train_loader)
+        history['loss'].append(avg_loss)
         history['acc'].append(epoch_acc)
+        
+        print(f"Epoch [{epoch+1}/{MAX_EPOCH}] 结束 | Avg Loss: {avg_loss:.4f} | Test Acc: {epoch_acc*100:.2f}%")
+        
+        # 保存最佳模型
+        if epoch_acc > best_acc:
+            best_acc = epoch_acc
+            torch.save(model.state_dict(), MODEL_SAVE_PATH)
+            print(f"[*] 检测到更高准确率，模型已保存至: {MODEL_SAVE_PATH}")
 
     # 绘制训练曲线
     try:
         import matplotlib.pyplot as plt
-        plt.figure(figsize=(12, 4))
-        plt.subplot(1, 2, 1)
-        plt.plot(history['loss'], label='Train Loss')
-        plt.title('Loss History')
-        plt.legend()
-        
-        plt.subplot(1, 2, 2)
-        plt.plot(history['acc'], label='Test Accuracy')
-        plt.title('Accuracy History')
-        plt.legend()
-        plt.savefig('cnn_training_history.png')
-        print("\n[OK] 训练历史曲线已保存至 cnn_training_history.png")
+        plt.style.use('ggplot')
+        fig, ax1 = plt.subplots(figsize=(10, 6))
+
+        color = 'tab:red'
+        ax1.set_xlabel('Epoch')
+        ax1.set_ylabel('Loss', color=color)
+        ax1.plot(range(1, MAX_EPOCH + 1), history['loss'], color=color, marker='o', label='Train Loss')
+        ax1.tick_params(axis='y', labelcolor=color)
+
+        ax2 = ax1.twinx()
+        color = 'tab:blue'
+        ax2.set_ylabel('Accuracy', color=color)
+        ax2.plot(range(1, MAX_EPOCH + 1), history['acc'], color=color, marker='s', label='Test Accuracy')
+        ax2.tick_params(axis='y', labelcolor=color)
+
+        plt.title('CNN Training History (MNIST)')
+        fig.tight_layout()
+        plot_path = os.path.join(BASE_DIR, 'cnn_training_history.png')
+        plt.savefig(plot_path)
+        print(f"\n[OK] 训练历史曲线已保存至: {plot_path}")
     except Exception as e:
         print(f"\n[Warning] 绘图失败: {e}")
 
     print("\n" + "=" * 60)
-    print(f"训练完成！最终测试准确率: {history['acc'][-1]*100:.2f}%")
+    print(f"训练完成！最高测试准确率: {best_acc*100:.2f}%")
 
 if __name__ == '__main__':
     model = CNN().to(DEVICE)

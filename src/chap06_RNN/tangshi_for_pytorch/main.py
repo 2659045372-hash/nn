@@ -138,31 +138,37 @@ def process_poems2(file_name):
 
 def generate_batch(batch_size, poems_vec, word_to_int):
     """
-    生成训练所需的批次数据（x_batches 和 y_batches）
-
-    参数:
-    - batch_size: 每个批次的样本数
-    - poems_vec: 所有诗歌的索引表示
-    - word_to_int: 词到索引的映射字典
-
-    返回:
-    - x_batches: 输入数据批次，形状为 (n_batches, batch_size, seq_len)
-    - y_batches: 目标数据批次，形状为 (n_batches, batch_size, seq_len)
+    生成训练所需的批次数据（x_batches 和 y_batches），并进行对齐填充
     """
     n_chunk = len(poems_vec) // batch_size
     x_batches = []
     y_batches = []
+    
+    # 填充字符的索引
+    pad_idx = word_to_int.get(' ', len(word_to_int))
 
     for i in range(n_chunk):
         start_index = i * batch_size
         end_index = start_index + batch_size
 
-        x_data = poems_vec[start_index:end_index]
+        batch_data = poems_vec[start_index:end_index]
+        
+        # 获取当前批次的最大长度
+        max_length = max(len(row) for row in batch_data)
+        
+        x_data = []
         y_data = []
-        for row in x_data:
-            y = row[1:]
-            y.append(row[-1])
-            y_data.append(y)
+        
+        for row in batch_data:
+            # 填充到最大长度
+            padding = [pad_idx] * (max_length - len(row))
+            x_row = row + padding
+            
+            # y 是 x 的偏移，且最后一个字符通常预测结束符或继续填充
+            y_row = row[1:] + [row[-1]] + padding
+            
+            x_data.append(x_row)
+            y_data.append(y_row)
 
         x_batches.append(x_data)
         y_batches.append(y_data)
@@ -171,9 +177,11 @@ def generate_batch(batch_size, poems_vec, word_to_int):
 
 
 def run_training():
+    print("开始处理数据集...")
     # 处理数据集
     poems_vector, word_to_int, vocabularies = process_poems1('./poems.txt')
-    print("finish loadding data, vocab size:", len(word_to_int))
+    print("数据集处理完成, 词汇表大小:", len(word_to_int))
+    print("诗歌数量:", len(poems_vector))
     
     BATCH_SIZE = 64
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -192,7 +200,7 @@ def run_training():
     optimizer = optim.Adam(model.parameters(), lr=0.001)
     loss_fun = torch.nn.CrossEntropyLoss()
 
-    for epoch in range(30):
+    for epoch in range(1):
         batches_inputs, batches_outputs = generate_batch(BATCH_SIZE, poems_vector, word_to_int)
         n_chunk = len(batches_inputs)
         
@@ -226,37 +234,17 @@ def run_training():
         torch.save(model.state_dict(), './poem_generator_rnn.pth')
 
 
-def gen_poem(begin_word, temperature=1.0):
+def gen_poem(begin_word, word_int_map, vocabularies, model, device, temperature=1.0):
     """
     基于 LSTM 模型生成古诗
-    
-    参数:
-        begin_word: 诗歌起始字
-        temperature: 温度参数，越高生成的诗越随机，越低越保守
     """
-    poems_vector, word_int_map, vocabularies = process_poems1('./poems.txt')
-    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
-    # 初始化并加载模型
-    model = rnn.RNN_model(
-        vocab_len=len(word_int_map) + 1, 
-        embedding_dim=128, 
-        lstm_hidden_dim=256,
-        num_layers=2
-    ).to(DEVICE)
-
-    if os.path.exists('./poem_generator_rnn.pth'):
-        model.load_state_dict(torch.load('./poem_generator_rnn.pth', map_location=DEVICE))
-    model.eval()
-
     # 将字转换为索引
     word_idx = word_int_map.get(begin_word)
     if word_idx is None:
-        print(f"字 '{begin_word}' 不在词汇表中，随机选择一个。")
         word_idx = np.random.randint(0, len(word_int_map))
 
     poem = [begin_word]
-    input_idx = torch.LongTensor([[word_idx]]).to(DEVICE)
+    input_idx = torch.LongTensor([[word_idx]]).to(device)
     hidden = None
 
     with torch.no_grad():
@@ -272,9 +260,21 @@ def gen_poem(begin_word, temperature=1.0):
                 break
             
             poem.append(word)
-            input_idx = torch.LongTensor([[word_idx]]).to(DEVICE)
+            input_idx = torch.LongTensor([[word_idx]]).to(device)
 
     return "".join(poem)
+
+
+def pretty_print_poem(poem):
+    """
+    格式化打印诗歌，每句诗后换行
+    """
+    # 简单的按标点符号换行
+    punctuations = ['，', '。', '！', '？']
+    for char in poem:
+        print(char, end='')
+        if char in punctuations:
+            print()
 
 
 if __name__ == '__main__':
@@ -288,13 +288,34 @@ if __name__ == '__main__':
     if args.mode == 'train':
         run_training()
     else:
+        # 优化：只加载一次数据和模型
+        print("正在加载数据和模型...")
+        poems_vector, word_int_map, vocabularies = process_poems1('./poems.txt')
+        DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        
+        model = rnn.RNN_model(
+            vocab_len=len(word_int_map) + 1, 
+            embedding_dim=128, 
+            lstm_hidden_dim=256,
+            num_layers=2
+        ).to(DEVICE)
+
+        if os.path.exists('./poem_generator_rnn.pth'):
+            model.load_state_dict(torch.load('./poem_generator_rnn.pth', map_location=DEVICE))
+            print("[OK] 已加载预训练模型。")
+        else:
+            print("[Warning] 未找到预训练模型，将使用随机初始化权重（生成内容可能无意义）。")
+        
+        model.eval()
+
         # 预设几个起始字进行演示
-        seeds = ['日', '红', '山', '夜', '湖', '君']
+        seeds = [args.start] if args.start else ['日', '红', '山', '夜', '湖', '君']
         print("="*30)
         print("正在生成古诗示例...")
         print("="*30)
         for seed in seeds:
-            poem = gen_poem(seed, temperature=args.temp)
+            poem = gen_poem(seed, word_int_map, vocabularies, model, DEVICE, temperature=args.temp)
+            print(f"起始字: {seed}")
             pretty_print_poem(poem)
             print("-" * 20)
 
