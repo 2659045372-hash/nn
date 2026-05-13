@@ -7,37 +7,41 @@ from collections import deque
 
 tf.compat.v1.disable_eager_execution()
 
+from typing import List, Tuple, Optional, Any, Deque
+
 class RL_QG_agent:
     """黑白棋强化学习智能体，基于Q学习和卷积神经网络"""
     
-    def __init__(self, learning_rate=0.001, reward_decay=0.9, e_greedy=0.9, replace_target_iter=200, memory_size=2000, batch_size=32):
+    def __init__(self, learning_rate: float = 0.001, reward_decay: float = 0.9, 
+                 e_greedy: float = 0.9, replace_target_iter: int = 200, 
+                 memory_size: int = 2000, batch_size: int = 32):
         """初始化智能体参数和模型路径"""
-        self.model_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Reversi")
+        self.model_dir: str = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Reversi")
         os.makedirs(self.model_dir, exist_ok=True)
         
         # 强化学习参数
-        self.lr = learning_rate
-        self.gamma = reward_decay
-        self.epsilon_max = e_greedy
-        self.epsilon = 0.1  # 初始探索率，随训练增加
-        self.replace_target_iter = replace_target_iter
-        self.memory_size = memory_size
-        self.batch_size = batch_size
-        self.learn_step_counter = 0
+        self.lr: float = learning_rate
+        self.gamma: float = reward_decay
+        self.epsilon_max: float = e_greedy
+        self.epsilon: float = 0.1  # 初始探索率，随训练增加
+        self.replace_target_iter: int = replace_target_iter
+        self.memory_size: int = memory_size
+        self.batch_size: int = batch_size
+        self.learn_step_counter: int = 0
         
         # 经验回放池
-        self.memory = deque(maxlen=self.memory_size)
+        self.memory: Deque[Tuple] = deque(maxlen=self.memory_size)
         
         # TensorFlow组件
-        self.sess = None
-        self.saver = None
-        self.input_states = None
-        self.Q_values = None
-        self.target_Q = None
-        self.loss = None
-        self.train_op = None
+        self.sess: Optional[tf.compat.v1.Session] = None
+        self.saver: Optional[tf.compat.v1.train.Saver] = None
+        self.input_states: Optional[tf.compat.v1.placeholder] = None
+        self.Q_values: Optional[tf.Tensor] = None
+        self.target_Q: Optional[tf.compat.v1.placeholder] = None
+        self.loss: Optional[tf.Tensor] = None
+        self.train_op: Optional[tf.Operation] = None
 
-    def _build_net(self, input_tensor, name):
+    def _build_net(self, input_tensor: tf.Tensor, name: str) -> tf.Tensor:
         """构建神经网络结构"""
         with tf.compat.v1.variable_scope(name):
             # 卷积层1
@@ -75,7 +79,7 @@ class RL_QG_agent:
             )
         return q_values
 
-    def init_model(self):
+    def init_model(self) -> None:
         """构建卷积神经网络模型"""
         self.sess = tf.compat.v1.Session()
         
@@ -100,7 +104,7 @@ class RL_QG_agent:
         self.sess.run(tf.compat.v1.global_variables_initializer())
         self.saver = tf.compat.v1.train.Saver()
 
-    def store_transition(self, s, a, r, s_, done):
+    def store_transition(self, s: np.ndarray, a: int, r: float, s_: np.ndarray, done: bool) -> None:
         """存储经验"""
         self.memory.append((s, a, r, s_, done))
 
@@ -146,7 +150,7 @@ class RL_QG_agent:
         
         self.learn_step_counter += 1
 
-    def place(self, state, enables):
+    def place(self, state: np.ndarray, enables: List[int]) -> int:
         """根据当前状态和合法动作选择最优落子位置 (Epsilon-Greedy)"""
         # 状态预处理
         state_input = np.array(state).reshape(1, 8, 8, 3).astype(np.float32)
@@ -167,7 +171,7 @@ class RL_QG_agent:
             
         return action
 
-    def save_model(self):
+    def save_model(self) -> None:
         """保存模型参数"""
         try:
             model_path = os.path.join(self.model_dir, 'parameter.ckpt')
@@ -176,7 +180,7 @@ class RL_QG_agent:
         except Exception as e:
             print("保存模型时出错:", e)
 
-    def load_model(self):
+    def load_model(self) -> None:
         """加载模型参数"""
         if self.sess is None:
             self.init_model()  # 未初始化则先构建模型
