@@ -31,7 +31,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 OU = OU()
 
 def init_weights(m):
-    if type(m) == torch.nn.Linear:
+    if isinstance(m, torch.nn.Linear):
         torch.nn.init.normal_(m.weight, 0, 1e-4)
         m.bias.data.fill_(0.0)
 
@@ -49,7 +49,7 @@ try:
     critic.load_state_dict(torch.load('criticmodel.pth'))
     critic.eval()
     print("model load successfully")
-except:
+except Exception:
     print("cannot find the model")
 
 #critic.apply(init_weights)
