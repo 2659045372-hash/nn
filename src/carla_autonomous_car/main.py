@@ -32,7 +32,7 @@ import inspect
 import argparse
 import os.path as osp
 from pathlib import Path
-import time
+from datetime import datetime
 import json
 import numpy as np
 
