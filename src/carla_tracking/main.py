@@ -877,7 +877,7 @@ class VehicleController:
             velocity = self.vehicle.get_velocity()
             speed = math.sqrt(velocity.x ** 2 + velocity.y ** 2) * 3.6
             self.control_state['speed'] = speed
-        except:
+        except Exception:
             speed = 0.0
 
         # PID控制速度
@@ -992,13 +992,13 @@ class NPCManager:
                     )
                     if dist < min_distance:
                         continue  # 太靠近，跳过
-                except:
+                except Exception:
                     pass
 
             # 随机选择车辆蓝图
             try:
                 vehicle_bp = random.choice(list(bp_lib.filter('vehicle.*')))
-            except:
+            except Exception:
                 continue
 
             # 设置随机颜色
@@ -1043,7 +1043,7 @@ class NPCManager:
                     self.traffic_manager.vehicle_percentage_speed_difference(
                         npc, random.uniform(-40.0, 40.0)
                     )
-            except:
+            except Exception:
                 pass
 
     def destroy_all_npcs(self):
@@ -1052,7 +1052,7 @@ class NPCManager:
             try:
                 if npc.is_alive:
                     npc.destroy()
-            except:
+            except Exception:
                 pass
         self.npc_vehicles.clear()
 
@@ -1353,7 +1353,7 @@ def spawn_ego_vehicle(world, config):
     vehicle_bp = None
     try:
         vehicle_bp = bp_lib.find('vehicle.lincoln.mkz_2020')
-    except:
+    except Exception:
         pass
 
     if not vehicle_bp:
@@ -1371,14 +1371,14 @@ def spawn_ego_vehicle(world, config):
                 vehicle_bp = bp_lib.find(vehicle_name)
                 if vehicle_bp:
                     break
-            except:
+            except Exception:
                 continue
 
     if not vehicle_bp:
         # 随机选择任意车辆
         try:
             vehicle_bp = random.choice(list(bp_lib.filter('vehicle.*')))
-        except:
+        except Exception:
             logger.error("错误：没有找到可用的车辆蓝图")
             return None
 
@@ -1403,7 +1403,7 @@ def spawn_ego_vehicle(world, config):
                 if dist < 10.0:  # 10米以内认为太靠近
                     too_close = True
                     break
-            except:
+            except Exception:
                 continue
 
         if not too_close:
@@ -1449,7 +1449,7 @@ def camera_callback(image, rgb_image_queue):
         if rgb_image_queue.full():
             try:
                 rgb_image_queue.get_nowait()  # 丢弃最旧帧
-            except:
+            except Exception:
                 pass
         rgb_image_queue.put(rgb)
     except Exception as e:
@@ -1476,7 +1476,7 @@ def depth_camera_callback(image, depth_queue):
         if depth_queue.full():
             try:
                 depth_queue.get_nowait()
-            except:
+            except Exception:
                 pass
         depth_queue.put(depth_in_meters)
     except Exception as e:
@@ -1543,9 +1543,9 @@ def main():
                 try:
                     if actor.is_alive:
                         actor.destroy()  # 清理现有车辆
-                except:
+                except Exception:
                     pass
-        except:
+        except Exception:
             pass
 
         time.sleep(1)  # 等待清理完成
@@ -1686,7 +1686,7 @@ def main():
                         carla.Rotation(yaw=ego_transform.rotation.yaw - 180, pitch=-30)  # 俯视视角
                     )
                     spectator.set_transform(spectator_transform)
-                except:
+                except Exception:
                     pass
 
                 # 手动控制
@@ -1725,7 +1725,7 @@ def main():
 
                     try:
                         vehicle.apply_control(control)
-                    except:
+                    except Exception:
                         pass
 
                 # 获取图像
@@ -1918,7 +1918,7 @@ def main():
                         for i, line in enumerate(control_info):
                             cv2.putText(image, line, (width - 200, 60 + i * 25),
                                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 100, 100), 2)
-                    except:
+                    except Exception:
                         pass
 
                 # 显示结果
@@ -1977,14 +1977,14 @@ def main():
             try:
                 camera.stop()
                 camera.destroy()
-            except:
+            except Exception:
                 pass
 
         if depth_camera:
             try:
                 depth_camera.stop()
                 depth_camera.destroy()
-            except:
+            except Exception:
                 pass
 
         # 销毁NPC
@@ -1995,7 +1995,7 @@ def main():
         if vehicle:
             try:
                 vehicle.destroy()
-            except:
+            except Exception:
                 pass
 
         # 恢复世界设置（关闭同步模式）
@@ -2004,7 +2004,7 @@ def main():
                 settings = world.get_settings()
                 settings.synchronous_mode = False
                 world.apply_settings(settings)
-            except:
+            except Exception:
                 pass
 
         cv2.destroyAllWindows()  # 关闭所有OpenCV窗口
@@ -2025,7 +2025,7 @@ def main():
             try:
                 avg_fps = 1.0 / np.mean(list(timings['total'])) if timings['total'] else 0
                 logger.info(f"平均FPS: {avg_fps:.1f}")
-            except:
+            except Exception:
                 pass
 
         if detection_stats:
