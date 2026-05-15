@@ -183,7 +183,7 @@ def main():
                 settings.synchronous_mode = False
                 settings.fixed_delta_seconds = None
                 world.apply_settings(settings)
-            except:
+            except Exception:
                 pass
 
         if vehicle:
