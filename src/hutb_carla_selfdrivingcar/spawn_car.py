@@ -8,6 +8,6 @@ def create_vehicle(world, carla_map):
         try:
             vehicle = world.spawn_actor(vehicle_bp, point)
             return vehicle
-        except:
+        except Exception:
             continue
-    raise Exception("车辆生成失败")
+    raise RuntimeError("车辆生成失败")
