@@ -24,7 +24,7 @@ def reconnect_carla_client(original_client, host='localhost', port=2000,
             if original_client:
                 try:
                     original_client.close()
-                except:
+                except Exception:
                     pass
             # 新建连接
             client = carla.Client(host, port)
