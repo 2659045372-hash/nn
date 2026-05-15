@@ -14,7 +14,6 @@ from dataclasses import dataclass
 from enum import Enum
 import time
 import hashlib
-from pathlib import Path
 
 
 class WeatherType(Enum):
@@ -176,7 +175,7 @@ class BatchEnhancer:
                 'compression_ratio': os.path.getsize(output_path) / max(1, os.path.getsize(input_path))
             }
         except Exception as e:
-            raise Exception(f"处理失败: {e}")
+            raise RuntimeError(f"处理失败: {e}") from e
 
     def _get_output_path(self, input_path: str, output_dir: str) -> str:
         """生成输出路径"""
